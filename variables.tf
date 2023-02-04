@@ -31,7 +31,7 @@ variable "bucket_force_destroy" {
 variable "bucket_object_versioning" {
   description = "Enable object versioning (default = true). Note this may incur more cost."
   type        = bool
-  default     = true
+  default     = false
 }
 
 // For tags
@@ -128,4 +128,3 @@ variable "allowed_cidrs" {
   type        = string
   default     = "0.0.0.0/0"
 }
-

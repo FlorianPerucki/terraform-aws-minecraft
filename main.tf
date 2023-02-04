@@ -5,15 +5,18 @@ data "aws_vpc" "default" {
   default = true
 }
 
-data "aws_subnet_ids" "default" {
-  vpc_id = local.vpc_id
+data "aws_subnets" "default" {
+filter {
+    name   = "vpc-id"
+    values = [local.vpc_id]
+  }
 }
 
 data "aws_caller_identity" "aws" {}
 
 locals {
   vpc_id    = length(var.vpc_id) > 0 ? var.vpc_id : data.aws_vpc.default.id
-  subnet_id = length(var.subnet_id) > 0 ? var.subnet_id : sort(data.aws_subnet_ids.default.ids)[0]
+  subnet_id = length(var.subnet_id) > 0 ? var.subnet_id : sort(data.aws_subnets.default.ids)[0]
   tf_tags = {
     Terraform = true,
     By        = data.aws_caller_identity.aws.arn
@@ -151,22 +154,7 @@ resource "aws_iam_role_policy" "mc_allow_ec2_to_s3" {
 EOF
 }
 
-// Script to configure the server - this is where most of the magic occurs!
-data "template_file" "user_data" {
-  template = file("${path.module}/user_data.sh")
-
-  vars = {
-    mc_root        = var.mc_root
-    mc_bucket      = local.bucket
-    mc_backup_freq = var.mc_backup_freq
-    mc_version     = var.mc_version
-    mc_type        = var.mc_type   
-    java_mx_mem    = var.java_mx_mem
-    java_ms_mem    = var.java_ms_mem
-  }
-}
-
-// Security group for our instance - allows SSH and minecraft 
+// Security group for our instance - allows SSH and minecraft
 module "ec2_security_group" {
   source = "git@github.com:terraform-aws-modules/terraform-aws-security-group.git?ref=master"
 
@@ -219,13 +207,20 @@ module "ec2_minecraft" {
   ami                  = var.ami != "" ? var.ami : data.aws_ami.ubuntu.image_id
   instance_type        = var.instance_type
   iam_instance_profile = aws_iam_instance_profile.mc.id
-  user_data            = data.template_file.user_data.rendered
+  user_data            = templatefile("${path.module}/user_data.sh", {
+    mc_root        = var.mc_root
+    mc_bucket      = local.bucket
+    mc_backup_freq = var.mc_backup_freq
+    mc_version     = var.mc_version
+    mc_type        = var.mc_type
+    java_mx_mem    = var.java_mx_mem
+    java_ms_mem    = var.java_ms_mem
+  })
 
   # network
   subnet_id                   = local.subnet_id
-  vpc_security_group_ids      = [ module.ec2_security_group.this_security_group_id ]
+  vpc_security_group_ids      = [ module.ec2_security_group.security_group_id ]
   associate_public_ip_address = var.associate_public_ip_address
 
   tags = module.label.tags
 }
-
